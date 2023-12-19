@@ -1,6 +1,3 @@
-// Author:CMH
-// Title:BreathingGlow+noise
-
 #ifdef GL_ES
 precision mediump float;
 #endif
@@ -9,111 +6,88 @@ uniform vec2 u_resolution;
 uniform vec2 u_mouse;
 uniform float u_time;
 
-float glow(float d, float str, float thickness){
-    return thickness / pow(d, str);
+vec2 random2(vec2 st) {
+    st = vec2(dot(st, vec2(0.820, 0.840)),
+              dot(st, vec2(0.810, 0.850)));
+    return -1.0 + 2.0 * fract(sin(st) * 43758.225);
 }
 
-vec2 hash2( vec2 x )            //亂數範圍 [-1,1]
-{
-    const vec2 k = vec2( 0.3183099, 0.3678794 );
-    x = x*k + k.yx;
-    return -1.0 + 2.0*fract( 16.0 * k*fract( x.x*x.y*(x.x+x.y)) );
-}
-float gnoise( in vec2 p )       //亂數範圍 [-1,1]
-{
-    vec2 i = floor( p );
-    vec2 f = fract( p );
-    
-    vec2 u = f*f*(3.0-2.0*f);
+float noise(vec2 st) {
+    vec2 i = floor(st);
+    vec2 f = fract(st);
 
-    return mix( mix( dot( hash2( i + vec2(0.0,0.0) ), f - vec2(0.0,0.0) ), 
-                            dot( hash2( i + vec2(1.0,0.0) ), f - vec2(1.0,0.0) ), u.x),
-                         mix( dot( hash2( i + vec2(0.0,1.0) ), f - vec2(0.0,1.0) ), 
-                            dot( hash2( i + vec2(1.0,1.0) ), f - vec2(1.0,1.0) ), u.x), u.y);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+
+    return mix(mix(dot(random2(i + vec2(0.0, 0.0)), f - vec2(0.0, 0.0)),
+                   dot(random2(i + vec2(1.0, 0.0)), f - vec2(1.0, 0.0)), u.x),
+               mix(dot(random2(i + vec2(0.0, 1.0)), f - vec2(0.0, 1.0)),
+                   dot(random2(i + vec2(1.0, 1.0)), f - vec2(1.0, 1.0)), u.x), u.y);
 }
 
-float fbm(in vec2 uv)       //亂數範圍 [-1,1]
-{
-    float f;                                                //fbm - fractal noise (4 octaves)
-    mat2 m = mat2( 1.6,  1.2, -1.2,  1.6 );
-    f   = 0.5000*gnoise( uv ); uv = m*uv;          
-    f += 0.2500*gnoise( uv ); uv = m*uv;
-    f += 0.1250*gnoise( uv ); uv = m*uv;
-    f += 0.0625*gnoise( uv ); uv = m*uv;
-    return f;
+mat2 rotate2d(float _angle) {
+    return mat2(cos(_angle), -sin(_angle),
+                sin(_angle), cos(_angle));
 }
 
-//Gradient Noise 3D
-vec3 hash( vec3 p ) // replace this by something better
-{
-    p = vec3( dot(p,vec3(127.1,311.7, 74.7)),
-              dot(p,vec3(269.5,183.3,246.1)),
-              dot(p,vec3(113.5,271.9,124.6)));
-
-    return -1.0 + 2.0*fract(sin(p)*43758.5453123);
+float shape(vec2 st, float radius, float timeOffset) {
+    st = vec2(0.5) - st;
+    float r = length(st) * 2.0;
+    float a = atan(st.y, st.x);
+    float m = abs(mod(a + (u_time + timeOffset) * 1.000, 3.276 * 2.0) - 3.14) / 3.6;
+    float f = radius;
+    m += noise(st + (u_time + timeOffset) * 0.1) * 0.5;
+    f += sin(a * 50.) * noise(st + (u_time + timeOffset) * 0.2) * 0.1;
+    f += (sin(a * 20.) * 0.1 * pow(m, 2.));
+    return 1. - smoothstep(f, f + 0.007, r);
 }
 
-float noise( in vec3 p )
-{
-    vec3 i = floor( p );
-    vec3 f = fract( p );
-    
-    vec3 u = f*f*(3.0-2.0*f);
-
-    return mix( mix( mix( dot( hash( i + vec3(0.0,0.0,0.0) ), f - vec3(0.0,0.0,0.0) ), 
-                          dot( hash( i + vec3(1.0,0.0,0.0) ), f - vec3(1.0,0.0,0.0) ), u.x),
-                     mix( dot( hash( i + vec3(0.0,1.0,0.0) ), f - vec3(0.0,1.0,0.0) ), 
-                          dot( hash( i + vec3(1.0,1.0,0.0) ), f - vec3(1.0,1.0,0.0) ), u.x), u.y),
-                mix( mix( dot( hash( i + vec3(0.0,0.0,1.0) ), f - vec3(0.0,0.0,1.0) ), 
-                          dot( hash( i + vec3(1.0,0.0,1.0) ), f - vec3(1.0,0.0,1.0) ), u.x),
-                     mix( dot( hash( i + vec3(0.0,1.0,1.0) ), f - vec3(0.0,1.0,1.0) ), 
-                          dot( hash( i + vec3(1.0,1.0,1.0) ), f - vec3(1.0,1.0,1.0) ), u.x), u.y), u.z );
+float shapeBorder(vec2 st, float radius, float width, float timeOffset) {
+    return shape(st, radius, timeOffset) - shape(st, radius - width, timeOffset);
 }
-
-
-float circle(vec2 uv, float radius){
-    float dist = length(uv);
-    float circle_dist = abs(dist-radius);                                //光環大小
-    return circle_dist;
-}
-
 
 void main() {
-    vec2 uv = gl_FragCoord.xy/u_resolution.xy;
-    uv.x *= u_resolution.x/u_resolution.y;
-    uv= uv*2.0-1.0;
-    vec2 mouse=u_mouse/u_resolution.xy;
-    mouse.x*= u_resolution.x/u_resolution.y;
-    mouse=mouse*2.0-1.0;
-    
-    //陰晴圓缺
-    float pi=3.14159;
-    float theta=2.0*pi*u_time/8.0;
-    vec2 point=vec2(sin(theta), cos(theta));
-    float dir= dot(point, (uv))+0.55;
-    
-    //亂數作用雲霧
-    float fog= fbm(0.4*uv+vec2(-0.1*u_time, -0.02*u_time))*0.6+0.1;
+    vec2 st = gl_FragCoord.xy / u_resolution.xy;
 
-    //定義圓環
-    float result;
-    for(float index=0.0;index<18.0;++index)
-    {
-    //float index=0.0;
-    float noise_position= smoothstep(-0.2, 0., -uv.y+-0.036);
-    float radius_noise=noise(vec3(2.180*uv,index+u_time*0.404))*-0.232*noise_position;
-    float radius=0.572+radius_noise;
-    float circle_dist = circle(uv, radius);                                //光環大小
-    
-    //動態呼吸
-    //float breathing=sin(2.0*u_time/5.0*pi)*0.5+0.2;                     //option1
-    //float breathing=(exp(sin(u_time/2.0*pi)) - 0.36787944)*0.42545906412;         //option2 錯誤
-    float breathing=(exp(sin(u_time/2.0*pi)) - 0.36787944)*0.42545906412;                //option2 正確
-    float strength =(0.08*breathing+0.3);          //[0.2~0.3]         //光暈強度加上動態時間營造呼吸感
-    float thickness=(0.0*breathing+0.01);          //[0.1~0.2]         //光環厚度 營造呼吸感
-    float glow_circle = glow(circle_dist, strength, thickness);
-    result+=glow_circle;
+    // 第一個圖形，不做時間偏移
+    vec3 color1 = vec3(0.557,0.726,0.770) * shapeBorder(st, 0.776, 0.012, -0.160);
+
+    // 第二個圖形，時間偏移為0.5
+    vec3 color2 = vec3(0.727,0.770,0.670) * shapeBorder(st, 0.784, 0.012, 1.012);
+
+    // 將兩個圖形的顏色相加
+    vec3 finalColor = color1 + color2;
+
+    // 第三個圖形，來自第三個程式碼
+    vec2 st2 = gl_FragCoord.xy / u_resolution.xy;
+    st2.x *= u_resolution.x / u_resolution.y;
+
+    st2 *= 3.0;
+    vec2 i_st2 = floor(st2);
+    vec2 f_st2 = fract(st2);
+    float m_dist2 = 1.0;
+    float max_dist2 = 0.0;
+
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 neighbor = vec2(float(x), float(y));
+            vec2 point = random2(i_st2 + neighbor);
+            point = 0.5 + 0.5 * sin(u_time + 6.2831 * point);
+            vec2 diff = neighbor + point - f_st2;
+            float dist = length(diff);
+            m_dist2 = min(m_dist2, dist);
+            max_dist2 = max(max_dist2, dist);
+        }
     }
-    gl_FragColor = vec4((vec3(result)),1.0);
-    //gl_FragColor = vec4(vec3(circle_dist),1.0); 
+
+    if (m_dist2 == max_dist2 && m_dist2 < -0.428) {
+        vec3 color3 = mix(vec3(0.5 + 0.5 * sin(u_time), 0.5 + 0.5 * cos(u_time), 0.5), vec3(0.0, 0.0, 0.0), smoothstep(-0.968, 1.184, m_dist2));
+        color3 += 1.032 - step(0.0, m_dist2);
+        finalColor += color3;
+    } else {
+        vec3 background = mix(vec3(0.5 + 0.5 * sin(u_time), 0.5 + 0.5 * cos(u_time), 0.5), vec3(0.0, 0.0, 0.0), smoothstep(-0.968, 1.184, m_dist2));
+        finalColor += background;
+    }
+
+    gl_FragColor = vec4(1.0 - finalColor, 1.0);
 }
+
